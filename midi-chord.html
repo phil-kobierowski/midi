@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MIDI Chord Listener - No Install</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; background: #111; color: #fff; }
+  #display { font-size: 3em; margin: 40px; }
+  #notes { font-size: 2em; }
+  #piano { width: 800px; margin: 20px auto; height: 200px; background: #333; border-radius: 10px; }
+  .key { display: inline-block; width: 40px; height: 200px; background: white; border: 1px solid #000; position: relative; }
+  .black { width: 30px; height: 120px; background: black; margin: 0 -15px; z-index: 1; }
+  .pressed { background: #0af !important; }
+</style>
+</head>
+<body>
+  <h1>MIDI Chord Detector</h1>
+  <div id="display">Play something...</div>
+  <div id="notes"></div>
+  <div id="piano"></div>
+
+  <script src="https://unpkg.com/@tonaljs/tonal@4"></script>
+  <script>
+    const display = document.getElementById('display');
+    const notesDiv = document.getElementById('notes');
+    const piano = document.getElementById('piano');
+
+    // Simple piano viz (white keys only for demo)
+    for (let i = 48; i <= 84; i += 1) {  // C3 to C6-ish
+      const key = document.createElement('div');
+      key.className = 'key';
+      key.dataset.note = i;
+      if ([1,3,6,8,10].includes(i % 12)) key.classList.add('black');
+      piano.appendChild(key);
+    }
+
+    let pressedNotes = new Set();
+
+    function updateDisplay() {
+      const notes = Array.from(pressedNotes).sort((a,b)=>a-b);
+      const noteNames = notes.map(n => Tonal.Note.fromMidi(n)).join(' ');
+      notesDiv.textContent = noteNames || 'No notes';
+
+      if (notes.length >= 3) {
+        const chord = Tonal.Chord.detect(notes.map(n => Tonal.Note.fromMidi(n)))[0] || 'Unknown';
+        display.textContent = chord || '???';
+      } else {
+        display.textContent = notes.length ? noteNames : 'Play something...';
+      }
+
+      document.querySelectorAll('.key').forEach(k => {
+        if (pressedNotes.has(parseInt(k.dataset.note))) k.classList.add('pressed');
+        else k.classList.remove('pressed');
+      });
+    }
+
+    if (navigator.requestMIDIAccess) {
+      navigator.requestMIDIAccess().then(midi => {
+        const inputs = midi.inputs.values();
+        for (let input of inputs) {
+          input.onmidimessage = msg => {
+            const = msg.data;
+            if (cmd === 144 && vel > 0) {  // note on
+              pressedNotes.add(note);
+            } else if (cmd === 128 || (cmd === 144 && vel === 0)) {  // note off
+              pressedNotes.delete(note);
+            }
+            updateDisplay();
+          };
+        }
+        display.textContent = 'MIDI connected! Play away.';
+      }).catch(err => {
+        display.textContent = 'MIDI access denied or not supported.';
+      });
+    } else {
+      display.textContent = 'Web MIDI not supported in this browser. Try Chrome.';
+    }
+  </script>
+</body>
+</html>
