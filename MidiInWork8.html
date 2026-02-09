@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MIDI Piano Staff - Ultimate Fixed</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: #0f172a; 
+            color: white; 
+            text-align: center; 
+            margin: 0; 
+            overflow: hidden; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header { background: #1e293b; padding: 15px; border-bottom: 4px solid #38bdf8; }
+        #chord-name { font-size: 3.5rem; font-weight: 900; color: #38bdf8; margin: 0; min-height: 1.2em; }
+        .controls { margin: 10px; display: flex; justify-content: center; gap: 8px; align-items: center; flex-wrap: wrap; }
+        select, .toggle-btn, input[type="number"], input[type="range"] { padding: 8px 12px; border-radius: 5px; background: #334155; color: white; border: 1px solid #38bdf8; cursor: pointer; font-weight: bold; }
+        .toggle-btn.active { background: #38bdf8; color: #0f172a; }
+        .toggle-btn.voice-active { background: #60a5fa; color: white; box-shadow: 0 0 10px #60a5fa; }
+        .toggle-btn.recording { background: #ef4444; border-color: #f87171; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .metro-box, .volume-box { display: flex; align-items: center; gap: 5px; background: #0f172a; padding: 5px 10px; border-radius: 5px; }
+        #pedal-indicator, #metro-light { padding: 5px 15px; border-radius: 20px; border: 2px solid #444; color: #444; font-weight: bold; }
+        #pedal-indicator.active { border-color: #facc15; color: #facc15; box-shadow: 0 0 10px #facc15; }
+        #metro-light.active { border-color: #22c55e; color: #22c55e; background: rgba(34, 197, 94, 0.2); }
+        canvas { background: white; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); margin: 10px auto; flex: 1; max-height: 500px; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .btn-start { padding: 25px 60px; font-size: 2rem; background: #38bdf8; border: none; border-radius: 50px; color: #0f172a; font-weight: bold; cursor: pointer; }
+        #volume-value { min-width: 70px; text-align: right; }
+
+        #midi-log {
+            margin: 15px auto;
+            width: 820px;
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: #a5b4fc;
+            max-height: 220px;
+            overflow-y: auto;
+            text-align: left;
+            border: 1px solid #334155;
+            font-size: 0.95rem;
+        }
+        #midi-log strong { color: white; }
+        #midi-log button { font-size: 0.85rem; padding: 4px 10px; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <button class="btn-start" onclick="forceStart()">START ENGINE</button>
+</div>
+
+<div class="header">
+    <div id="chord-name">-</div>
+    <div class="controls">
+        <select id="inst-select" onchange="changeInstrument(this.value)">
+            <option value="acoustic_grand_piano" selected>Grand Piano</option>
+            <option value="electric_piano_1">Rhodes E-Piano</option>
+            <option value="drawbar_organ">Hammond Organ</option>
+            <option value="marimba">Marimba</option>
+            <option value="violin">Violin</option>
+            <option value="string_ensemble_1">Strings</option>
+            <option value="trumpet">Trumpet</option>
+            <option value="alto_sax">Alto Sax</option>
+            <option value="flute">Flute</option>
+        </select>
+
+        <select id="scale-select" onchange="updateUI()">
+            <option value="C major">C major</option>
+            <option value="G major" selected>G major</option>
+            <option value="D major">D major</option>
+            <option value="A major">A major</option>
+            <option value="E major">E major</option>
+            <option value="B major">B major</option>
+            <option value="F# major">F♯ major</option>
+            <option value="C# major">C♯ major</option>
+            <option value="F major">F major</option>
+            <option value="Bb major">B♭ major</option>
+            <option value="Eb major">E♭ major</option>
+            <option value="Ab major">A♭ major</option>
+            <option value="Db major">D♭ major</option>
+            <option value="Gb major">G♭ major</option>
+            <option value="A minor">A minor</option>
+            <option value="E minor">E minor</option>
+            <option value="B minor">B minor</option>
+            <option value="F# minor">F♯ minor</option>
+            <option value="C# minor">C♯ minor</option>
+            <option value="G# minor">G♯ minor</option>
+            <option value="D# minor">D♯ minor / E♭ minor</option>
+            <option value="D minor">D minor</option>
+            <option value="G minor">G minor</option>
+            <option value="C minor">C minor</option>
+            <option value="F minor">F minor</option>
+            <option value="Bb minor">B♭ minor</option>
+        </select>
+
+        <button id="sharp-btn" class="toggle-btn" onclick="setAccidental('sharp')">#</button>
+        <button id="flat-btn" class="toggle-btn" onclick="setAccidental('flat')">♭</button>
+        <button id="auto-btn" class="toggle-btn active" onclick="setAccidental('auto')">AUTO</button>
+        
+        <button id="voice-btn" class="toggle-btn" onclick="toggleVoice()">🎤 VOICE</button>
+        <button id="record-btn" class="toggle-btn" onclick="toggleRecording()">REC ●</button>
+
+        <button id="out-of-key-alert-btn" class="toggle-btn" onclick="toggleOutOfKeyAlert()">OUT-OF-KEY BEEP</button>
+
+        <div class="metro-box">
+            <input type="number" id="bpm-input" value="120" min="40" max="240" onchange="bpm = this.value" style="width:60px">
+            <button id="metro-btn" class="toggle-btn" onclick="toggleMetronome()">CLICK</button>
+            <div id="metro-light">BEAT</div>
+        </div>
+
+        <div class="volume-box">
+            <label for="volume-slider" style="font-weight:bold; color:#38bdf8;">VOL</label>
+            <input type="range" id="volume-slider" min="0" max="500" value="300" step="1" style="width:180px;">
+            <span id="volume-value">300%</span>
+        </div>
+        
+        <div id="pedal-indicator">SUSTAIN</div>
+    </div>
+</div>
+
+<canvas id="staff" width="800" height="500"></canvas>
+
+<div id="midi-log">
+    <strong>MIDI Debug Log</strong>  
+    <button class="toggle-btn" onclick="document.getElementById('midi-messages').innerHTML='';" style="font-size:0.85rem; padding:4px 10px;">Clear</button><br>
+    <div id="midi-messages"></div>
+</div>
+
+<script>
+    const canvas = document.getElementById('staff');
+    const ctx = canvas.getContext('2d');
+    let piano, audioCtx, midiAccess, recorder, mixDestination;
+    let activeNotes = new Set(), playingNotes = {}, notesToRelease = new Set();
+    let pedalDown = false, accidentalMode = 'auto', isRecording = false, recordedChunks = [];
+    let isListeningVoice = false, currentVoiceMidi = null, analyzer, dataArray;
+    let isMetroOn = false, bpm = 120, nextBeatTime = 0, metroTimer;
+    let masterGain;
+    let outOfKeyAlertEnabled = false;
+
+    const sharpSteps = { 0:0, 1:0, 2:1, 3:1, 4:2, 5:3, 6:3, 7:4, 8:4, 9:5, 10:5, 11:6 };
+    const flatSteps  = { 0:0, 1:1, 2:1, 3:2, 4:2, 5:3, 6:4, 7:4, 8:5, 9:5, 10:6, 11:6 };
+
+    async function forceStart() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(3.0, audioCtx.currentTime);
+        masterGain.connect(audioCtx.destination);
+        mixDestination = audioCtx.createMediaStreamDestination();
+        masterGain.connect(mixDestination);
+        midiAccess = await navigator.requestMIDIAccess();
+        for (let input of midiAccess.inputs.values()) input.onmidimessage = handleMIDI;
+        await changeInstrument(document.getElementById('inst-select').value);
+        document.getElementById('overlay').style.display = 'none';
+        drawLoop();
+    }
+
+    async function changeInstrument(name) {
+        piano = await Soundfont.instrument(audioCtx, name, { destination: masterGain });
+        const recordingPiano = await Soundfont.instrument(audioCtx, name, { destination: mixDestination });
+        const originalPlay = piano.play;
+        piano.play = (note, time, options) => {
+            recordingPiano.play(note, time, options);
+            return originalPlay.call(piano, note, time, options);
+        };
+    }
+
+    function logMIDIMessage(data) {
+        const [status, note, velocity] = data;
+        const channel = (status & 0x0F) + 1;
+        const cmd = status & 0xF0;
+        let cmdName = (cmd === 0x90 && velocity > 0) ? "Note On" : 
+                      (cmd === 0x80 || (cmd === 0x90 && velocity === 0)) ? "Note Off" : 
+                      (cmd === 0xB0 && note === 64) ? "Sustain" : "Other";
+        const time = new Date().toLocaleTimeString([], {hour12: false, timeStyle: "medium"});
+        const message = `<span style="color:#94a3b8;">${time}</span> | Ch<span style="color:#f87171;">${channel}</span> | <span style="color:#fbbf24;">${cmdName}</span> | Note <span style="color:#6ee7b7;">${note}</span> | Vel <span style="color:#f472b6;">${velocity}</span><br>`;
+        const logDiv = document.getElementById('midi-messages');
+        logDiv.insertAdjacentHTML('afterbegin', message);
+        if (logDiv.children.length > 25) logDiv.removeChild(logDiv.lastChild);
+    }
+
+    function isNoteInSelectedScale(midiNote) {
+        const scale = Tonal.Scale.get(document.getElementById('scale-select').value);
+        const noteName = Tonal.Midi.midiToNoteName(midiNote);
+        const chroma = Tonal.Note.chroma(noteName);
+        return scale.notes.some(n => Tonal.Note.chroma(n) === chroma);
+    }
+
+    function toggleOutOfKeyAlert() {
+        outOfKeyAlertEnabled = !outOfKeyAlertEnabled;
+        document.getElementById('out-of-key-alert-btn').classList.toggle('active', outOfKeyAlertEnabled);
+    }
+
+    function handleMIDI(m) {
+        logMIDIMessage(m.data);
+        const [status, note, vel] = m.data;
+        const cmd = status & 0xf0;
+        if (cmd === 0x90 && vel > 0) {
+            activeNotes.add(note);
+            if (playingNotes[note]) playingNotes[note].stop();
+            playingNotes[note] = piano.play(note);
+
+            if (outOfKeyAlertEnabled && !isNoteInSelectedScale(note)) {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                osc.connect(gainNode);
+                gainNode.connect(masterGain);
+                
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(680, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+                
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.08);
+            }
+        } else if (cmd === 0x80 || (cmd === 0x90 && vel === 0)) {
+            if (pedalDown) notesToRelease.add(note); else killNote(note);
+        } else if (cmd === 0xb0 && note === 64) {
+            pedalDown = vel >= 64;
+            document.getElementById('pedal-indicator').className = pedalDown ? 'active' : '';
+            if (!pedalDown) { notesToRelease.forEach(killNote); notesToRelease.clear(); }
+        }
+        updateUI();
+    }
+
+    function killNote(n) {
+        activeNotes.delete(n);
+        if (playingNotes[n]) { playingNotes[n].stop(); delete playingNotes[n]; }
+    }
+
+    function updateUI() {
+        const sortedMidi = Array.from(activeNotes).sort((a,b) => a - b);
+        if (sortedMidi.length === 0) {
+            document.getElementById('chord-name').innerText = "-";
+            return;
+        }
+
+        const noteNames = sortedMidi.map(n => {
+            const base = Tonal.Midi.midiToNoteName(n);
+            return shouldUseFlat(n) ? base : Tonal.Note.enharmonic(base);
+        });
+
+        // Get detected chords
+        let detected = Tonal.Chord.detect(noteNames);
+
+        let display = noteNames.join(" ");
+
+        if (detected.length > 0) {
+            display = detected[0];
+        }
+
+        // Force major/minor triad preference for 3-note chords
+        if (sortedMidi.length === 3) {
+            const bass = noteNames[0]; // lowest note (pitch class)
+
+            // Try each note as potential root
+            for (let rootNote of noteNames) {
+                const rootPc = rootNote.split(/[0-9]/)[0];
+                const remaining = noteNames.filter(n => n !== rootNote);
+                const candidates = Tonal.Chord.detect([rootNote, ...remaining]);
+
+                for (let cand of candidates) {
+                    // Accept only clean major/minor triads (no aug, dim, #5, etc.)
+                    if ((cand.includes('major') || cand.includes('M') ||
+                         cand.includes('minor') || cand.includes('m')) &&
+                        !cand.includes('#5') && !cand.includes('b5') &&
+                        !cand.includes('aug') && !cand.includes('dim')) {
+
+                        // Build clean name with M for major
+                        let cleanName = cand.split('/')[0];
+                        if (!cleanName.includes('m') && !cleanName.includes('dim')) {
+                            cleanName = cleanName.replace(/^([A-G][b#]?)$/, '$1M');
+                        }
+
+                        // Add inversion only if bass is different from root
+                        if (bass !== rootPc) {
+                            display = cleanName + '/' + bass;
+                        } else {
+                            display = cleanName;
+                        }
+
+                        // Once we find a good triad match, use it and stop
+                        document.getElementById('chord-name').innerText = display;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Fallback to original detection if no clean triad was found
+        document.getElementById('chord-name').innerText = display;
+    }
+
+    function shouldUseFlat(midi) {
+        if (accidentalMode === 'flat') return true;
+        if (accidentalMode === 'sharp') return false;
+        const scaleNotes = Tonal.Scale.get(document.getElementById('scale-select').value).notes;
+        const pc = Tonal.Note.pitchClass(Tonal.Midi.midiToNoteName(midi));
+        for (const n of scaleNotes) if (Tonal.Note.pitchClass(n) === pc) return n.includes('b');
+        return ["F major", "Bb major", "Eb major", "Ab major", "Db major", "Gb major",
+                "Bb minor", "Eb minor", "Ab minor", "Db minor", "Gb minor", "Cb minor"]
+                .includes(document.getElementById('scale-select').value);
+    }
+
+    function setAccidental(mode) {
+        accidentalMode = mode;
+        ['sharp', 'flat', 'auto'].forEach(m => document.getElementById(m+'-btn').classList.toggle('active', mode === m));
+        updateUI();
+    }
+
+    function getStaffY(midi) {
+        const map = shouldUseFlat(midi) ? flatSteps : sharpSteps;
+        const totalSteps = Math.floor(midi / 12) * 7 + map[midi % 12];
+        return midi >= 60 ? 210 - (totalSteps - 37) * 10 : 310 - (totalSteps - 33) * 10;
+    }
+
+    function toggleMetronome() {
+        isMetroOn = !isMetroOn;
+        document.getElementById('metro-btn').classList.toggle('active', isMetroOn);
+        if (isMetroOn) { nextBeatTime = audioCtx.currentTime; runMetro(); } else { clearTimeout(metroTimer); }
+    }
+
+    function runMetro() {
+        while (nextBeatTime < audioCtx.currentTime + 0.1) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.connect(g); g.connect(masterGain); g.connect(mixDestination);
+            osc.frequency.value = 1000; g.gain.setValueAtTime(0.3, nextBeatTime);
+            g.gain.exponentialRampToValueAtTime(0.001, nextBeatTime + 0.05);
+            osc.start(nextBeatTime); osc.stop(nextBeatTime + 0.05);
+            nextBeatTime += 60.0 / bpm;
+            const scheduleTime = (nextBeatTime - audioCtx.currentTime) * 1000;
+            setTimeout(() => {
+                const l = document.getElementById('metro-light'); l.classList.add('active');
+                setTimeout(() => l.classList.remove('active'), 100);
+            }, scheduleTime);
+        }
+        metroTimer = setTimeout(runMetro, 25);
+    }
+
+    async function toggleVoice() {
+        if (!isListeningVoice) {
+            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const src = audioCtx.createMediaStreamSource(s); src.connect(mixDestination);
+            analyzer = audioCtx.createAnalyser(); src.connect(analyzer);
+            dataArray = new Float32Array(analyzer.fftSize);
+            isListeningVoice = true; document.getElementById('voice-btn').classList.add('voice-active');
+        } else { 
+            isListeningVoice = false; 
+            document.getElementById('voice-btn').classList.remove('voice-active'); 
+        }
+    }
+
+    function toggleRecording() {
+        if (!isRecording) {
+            recordedChunks = []; 
+            recorder = new MediaRecorder(mixDestination.stream);
+            recorder.ondataavailable = e => recordedChunks.push(e.data);
+            recorder.onstop = () => {
+                const a = document.createElement('a'); 
+                a.href = URL.createObjectURL(new Blob(recordedChunks)); 
+                a.download = 'session.webm'; 
+                a.click();
+            };
+            recorder.start(); 
+            isRecording = true; 
+            document.getElementById('record-btn').classList.add('recording');
+        } else { 
+            recorder.stop(); 
+            isRecording = false; 
+            document.getElementById('record-btn').classList.remove('recording'); 
+        }
+    }
+
+    function updateMasterVolume() {
+        const slider = document.getElementById('volume-slider');
+        const valueDisplay = document.getElementById('volume-value');
+        const percent = parseInt(slider.value);
+        const gainValue = percent / 100;
+        if (masterGain) masterGain.gain.setValueAtTime(gainValue, audioCtx.currentTime);
+        valueDisplay.textContent = percent + "%";
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const slider = document.getElementById('volume-slider');
+        if (slider) {
+            slider.addEventListener('input', updateMasterVolume);
+            updateMasterVolume();
+        }
+    });
+
+    function drawLoop() {
+        if (isListeningVoice && analyzer) {
+            analyzer.getFloatTimeDomainData(dataArray);
+            let max = 0, pos = -1;
+            for(let i=0; i<dataArray.length; i++) { 
+                if(Math.abs(dataArray[i]) > max) { max = Math.abs(dataArray[i]); pos = i; } 
+            }
+            if (max > 0.05) {
+                let freq = audioCtx.sampleRate / (pos || 1);
+                if (freq > 70 && freq < 1000) currentVoiceMidi = Math.round(12 * Math.log2(freq / 440) + 69);
+            } else currentVoiceMidi = null;
+        }
+
+        ctx.clearRect(0, 0, 800, 500);
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
+        for(let i = 0; i < 5; i++) {
+            ctx.beginPath(); ctx.moveTo(50, 210-i*20); ctx.lineTo(750, 210-i*20); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(50, 390-i*20); ctx.lineTo(750, 390-i*20); ctx.stroke();
+        }
+        ctx.fillStyle = "#000"; ctx.font = "80px serif";
+        ctx.fillText("𝄞", 60, 215); ctx.fillText("𝄢", 60, 375);
+
+        const scale = Tonal.Scale.get(document.getElementById('scale-select').value);
+        const scaleChromas = scale.notes.map(n => Tonal.Note.chroma(n));
+
+        activeNotes.forEach(note => {
+            const y = getStaffY(note), x = 400;
+            const chroma = note % 12;
+            const degreeIndex = scaleChromas.indexOf(chroma);
+            const degree = degreeIndex + 1;
+            
+            if (note === 60) { 
+                ctx.beginPath(); ctx.moveTo(x-20, 230); ctx.lineTo(x+20, 230); ctx.stroke(); 
+            }
+            if (y < 130 || (y > 230 && y < 290) || y > 390) {
+                if ((y - 210) % 20 === 0 || (y - 390) % 20 === 0) {
+                    ctx.beginPath(); ctx.moveTo(x-20, y); ctx.lineTo(x+20, y); ctx.stroke();
+                }
+            }
+
+            ctx.fillStyle = degree > 0 ? "#22c55e" : "#ef4444";
+            ctx.beginPath(); ctx.ellipse(x, y, 11, 8, -0.2, 0, Math.PI * 2); ctx.fill();
+            
+            if (degree > 0) {
+                ctx.fillStyle = "#22c55e"; ctx.font = "bold 16px sans-serif";
+                ctx.textAlign = "center"; ctx.fillText(degree, x, y - 18); ctx.textAlign = "left";
+            }
+            if ([1,3,6,8,10].includes(note % 12)) {
+                ctx.fillStyle = "#000"; ctx.font = "bold 24px serif";
+                ctx.fillText(shouldUseFlat(note) ? "♭" : "#", x - 35, y + 8);
+            }
+        });
+
+        if (isListeningVoice && currentVoiceMidi) {
+            ctx.fillStyle = "#60a5fa";
+            ctx.beginPath(); ctx.ellipse(650, getStaffY(currentVoiceMidi), 11, 8, -0.2, 0, Math.PI * 2); ctx.fill();
+        }
+        requestAnimationFrame(drawLoop);
+    }
+</script>
+</body>
+</html>
